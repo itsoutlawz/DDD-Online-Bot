@@ -228,10 +228,34 @@ class Sheets:
         self.ss = client.open_by_url(SHEET_URL)
         self.ws = self._get_or_create("ProfilesOnline", cols=len(COLUMN_ORDER))
         self.target = self._get_or_create("Target", cols=4)
-        if not self.ws.get_all_values():
-            self.ws.append_row(COLUMN_ORDER)
-            try: self.ws.freeze(rows=1)
-            except: pass
+        # Ensure headers exist for ProfilesOnline
+        try:
+            values = self.ws.get_all_values()
+            if not values or not values[0] or all(not c for c in values[0]):
+                log_msg("Initializing ProfilesOnline headers...")
+                self.ws.append_row(COLUMN_ORDER)
+                try: self.ws.freeze(rows=1)
+                except: pass
+        except Exception as e:
+            log_msg(f"Header init failed: {e}")
+        # Ensure headers exist for Target sheet
+        try:
+            tvals = self.target.get_all_values()
+            if not tvals or not tvals[0] or all(not c for c in tvals[0]):
+                log_msg("Initializing Target headers...")
+                self.target.append_row(["Nickname","Status","Remarks","Source"])
+        except Exception as e:
+            log_msg(f"Target header init failed: {e}")
+        # Dashboard worksheet
+        try:
+            self.dashboard = self._get_or_create("Dashboard", cols=11)
+            dvals = self.dashboard.get_all_values()
+            expected = ["Run#","Timestamp","Profiles","Success","Failed","New","Updated","Unchanged","Trigger","Start","End"]
+            if not dvals or dvals[0] != expected:
+                self.dashboard.clear()
+                self.dashboard.append_row(expected)
+        except Exception as e:
+            log_msg(f"Dashboard setup failed: {e}")
         self._format()
         self._load_existing()
 
@@ -274,6 +298,25 @@ class Sheets:
             log_msg(f"Loaded {len(self.existing)} existing")
         except Exception as e:
             log_msg(f"Load existing failed: {e}")
+
+    def update_dashboard(self, metrics: dict):
+        try:
+            row = [
+                metrics.get("Run Number", 1),
+                metrics.get("Last Run", get_pkt_time().strftime("%d-%b-%y %I:%M %p")),
+                metrics.get("Profiles Processed", 0),
+                metrics.get("Success", 0),
+                metrics.get("Failed", 0),
+                metrics.get("New Profiles", 0),
+                metrics.get("Updated Profiles", 0),
+                metrics.get("Unchanged Profiles", 0),
+                metrics.get("Trigger", os.getenv('GITHUB_EVENT_NAME','manual')),
+                metrics.get("Start", get_pkt_time().strftime("%d-%b-%y %I:%M %p")),
+                metrics.get("End", get_pkt_time().strftime("%d-%b-%y %I:%M %p")),
+            ]
+            self.dashboard.append_row(row)
+        except Exception as e:
+            log_msg(f"Dashboard update failed: {e}")
 
     def _update_links(self, row_idx, data):
         for col in LINK_COLUMNS:
@@ -434,16 +477,38 @@ def main():
         if not login(driver):
             print("❌ Login failed"); driver.quit(); sys.exit(1)
         names = fetch_online_nicknames(driver)
+        log_msg(f"Processing {len(names)} users...")
         if MAX_PROFILES_PER_RUN > 0:
             names = names[:MAX_PROFILES_PER_RUN]
+        success = failed = 0
+        run_stats = {"new":0, "updated":0, "unchanged":0}
         for i, nick in enumerate(names, 1):
             log_msg(f"[{i}/{len(names)}] {nick}")
-            prof = scrape_profile(driver, nick)
-            sheets.write_profile(prof)
+            try:
+                prof = scrape_profile(driver, nick)
+                sheets.write_profile(prof)
+                success += 1
+            except Exception as e:
+                failed += 1
+                log_msg(f"Write error: {e}")
             if BATCH_SIZE > 0 and i % BATCH_SIZE == 0 and i < len(names):
                 log_msg("Batch cool-off"); adaptive.on_batch(); time.sleep(3)
             adaptive.sleep()
         print("\n✅ Done")
+        # Dashboard update
+        sheets.update_dashboard({
+            "Run Number": 1,
+            "Last Run": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+            "Profiles Processed": len(names),
+            "Success": success,
+            "Failed": failed,
+            "New Profiles": run_stats.get('new',0),
+            "Updated Profiles": run_stats.get('updated',0),
+            "Unchanged Profiles": run_stats.get('unchanged',0),
+            "Trigger": ("Scheduled" if os.getenv('GITHUB_EVENT_NAME','').lower()=='schedule' else "Manual"),
+            "Start": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+            "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+        })
     finally:
         try: driver.quit()
         except: pass
