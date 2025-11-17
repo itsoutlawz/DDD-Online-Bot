@@ -17,7 +17,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 14
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,8 +66,8 @@ jobs:
           MAX_PROFILES_PER_RUN: ${{ github.event.inputs.max_profiles || '0' }}
           BATCH_SIZE: ${{ github.event.inputs.batch_size || '10' }}
           MIN_DELAY: '0.5'
-          MAX_DELAY: '0.7'
+          MAX_DELAY: '0.6'
           PAGE_LOAD_TIMEOUT: '30'
-          SHEET_WRITE_DELAY: '1.0'
+          SHEET_WRITE_DELAY: '1.1'
         run: |
           python Scraper.py
