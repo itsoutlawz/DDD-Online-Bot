@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local creds
+google_credentials.json
+.env
+
+# Logs
+*.log
