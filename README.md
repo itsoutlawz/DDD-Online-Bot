@@ -105,7 +105,7 @@ Add these:
 ---
 
 # 📄 Full Workflow File (GitHub Actions)
-
+---
 ```yaml
 name: "DDD Online Bot"
 
@@ -177,9 +177,9 @@ jobs:
           SHEET_WRITE_DELAY: '1.1'
         run: |
           python Scraper.py
-
-
+```
 ---
+
 
 📒 Google Sheets Structure
 
@@ -261,3 +261,4 @@ Agar tumhein koi issue aaye, workflow optimize karna ho, ya new features chahiye
 
 Developed by itsoutlawz
 Automation design & documentation by ChatGPT (Nadeem Support Mode)
+
