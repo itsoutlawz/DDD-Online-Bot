@@ -1,0 +1,73 @@
+name: "DDD Online Bot"
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      max_profiles:
+        description: 'Max Profiles (0 = unlimited)'
+        required: false
+        default: '0'
+      batch_size:
+        description: 'Batch Size'
+        required: false
+        default: '10'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Setup Chromedriver
+        uses: nanasess/setup-chromedriver@v2
+
+      - name: Prepare Google Credentials (optional)
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        run: |
+          if [ -n "$GOOGLE_SHEET_URL" ]; then
+            if [ -z "$GOOGLE_CREDENTIALS_JSON" ]; then
+              echo "❌ GOOGLE_SHEET_URL is set but GOOGLE_CREDENTIALS_JSON is missing." && exit 1
+            fi
+            printf '%s' "$GOOGLE_CREDENTIALS_JSON" > google_credentials.json
+            chmod 600 google_credentials.json
+            echo "GOOGLE_APPLICATION_CREDENTIALS=${{ github.workspace }}/google_credentials.json" >> $GITHUB_ENV
+          else
+            echo "ℹ️ No sheet URL set - skipping credentials."
+          fi
+
+      - name: Run Online Bot
+        env:
+          DAMADAM_USERNAME: ${{ secrets.DAMADAM_USERNAME }}
+          DAMADAM_PASSWORD: ${{ secrets.DAMADAM_PASSWORD }}
+          DAMADAM_USERNAME_2: ${{ secrets.DAMADAM_USERNAME_2 }}
+          DAMADAM_PASSWORD_2: ${{ secrets.DAMADAM_PASSWORD_2 }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          MAX_PROFILES_PER_RUN: ${{ github.event.inputs.max_profiles || '0' }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '10' }}
+          MIN_DELAY: '0.5'
+          MAX_DELAY: '0.7'
+          PAGE_LOAD_TIMEOUT: '30'
+          SHEET_WRITE_DELAY: '1.0'
+        run: |
+          python Scraper.py
