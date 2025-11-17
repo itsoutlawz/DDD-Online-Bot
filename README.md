@@ -28,6 +28,36 @@ This bot:
 Ye poora system **zero local hosting** ke saath, sirf GitHub se chal raha hota hai.
 
 ---
+```mermaid
+flowchart TD
+
+A[GitHub Actions Trigger] --> B[Setup Python & Chrome]
+B --> C[Login with Cookies]
+C -->|Success| D[Fetch Online Users]
+C -->|Failed| E[Fresh Login Attempt]
+
+D --> F{Profiles Found?}
+
+F -->|No| Z[Exit]
+
+F -->|Yes| G[Loop Through Each User]
+
+G --> H[Open Profile Page]
+H --> I[Extract Profile Data]
+I --> J[Find Latest Post]
+J --> K[Write to Google Sheet]
+
+K --> L[Row Insert + Link Formulas]
+L --> M[Detect Changes]
+M --> N[Add Notes / Highlights]
+
+N --> O[Update Dashboard]
+O --> P[Wait Adaptive Delay]
+P --> G
+
+Z --> Q[End]
+```
+---
 
 # 🚀 Key Features
 
@@ -261,4 +291,5 @@ Agar tumhein koi issue aaye, workflow optimize karna ho, ya new features chahiye
 
 Developed by itsoutlawz
 Automation design & documentation by ChatGPT (Nadeem Support Mode)
+
 
