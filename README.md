@@ -6,6 +6,7 @@
   <img src="https://img.shields.io/badge/version-v3.2.1-blueviolet" />
   <img src="https://img.shields.io/badge/status-active-brightgreen" />
 </p>
+
 # DamaDam Online Bot (Single-File) — v3.2.1
 [![DDD Online Bot](https://github.com/itsoutlawz/DDD-Online-Bot/actions/workflows/online-bot.yml/badge.svg?branch=main)](https://github.com/itsoutlawz/DDD-Online-Bot/actions/workflows/online-bot.yml)
 - Scrapes currently online users and writes to Google Sheets (ProfilesOnline).
@@ -34,5 +35,6 @@ python Scraper.py
 ## GitHub Actions
 - Manual dispatch and schedule supported.
 - The workflow writes GOOGLE_CREDENTIALS_JSON to google_credentials.json and sets GOOGLE_APPLICATION_CREDENTIALS.
+
 
 
