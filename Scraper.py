@@ -127,6 +127,20 @@ def get_friend_status(driver)->str:
     except Exception:
         return ""
 
+def calculate_eta(processed:int, total:int, start_ts:float)->str:
+    if processed==0:
+        return "Calculating..."
+    elapsed=time.time()-start_ts
+    rate=processed/elapsed if elapsed>0 else 0
+    remaining=total-processed
+    eta=remaining/rate if rate>0 else 0
+    if eta<60:
+        return f"{int(eta)}s"
+    if eta<3600:
+        return f"{int(eta//60)}m {int(eta%60)}s"
+    hrs=int(eta//3600); mins=int((eta%3600)//60)
+    return f"{hrs}h {mins}m"
+
 def extract_text_comment_url(href:str)->str:
     m=re.search(r'/comments/text/(\d+)/', href or '')
     if m:
@@ -312,7 +326,6 @@ class Sheets:
         self.existing = {}
         self.ss = client.open_by_url(SHEET_URL)
         self.ws = self._get_or_create("ProfilesOnline", cols=len(COLUMN_ORDER))
-        self.target = self._get_or_create("Target", cols=4)
         # Ensure headers exist for ProfilesOnline
         try:
             values = self.ws.get_all_values()
@@ -323,14 +336,6 @@ class Sheets:
                 except: pass
         except Exception as e:
             log_msg(f"Header init failed: {e}")
-        # Ensure headers exist for Target sheet
-        try:
-            tvals = self.target.get_all_values()
-            if not tvals or not tvals[0] or all(not c for c in tvals[0]):
-                log_msg("Initializing Target headers...")
-                self.target.append_row(["Nickname","Status","Remarks","Source"])
-        except Exception as e:
-            log_msg(f"Target header init failed: {e}")
         # Dashboard worksheet
         try:
             self.dashboard = self._get_or_create("Dashboard", cols=11)
@@ -350,28 +355,43 @@ class Sheets:
         except gspread.exceptions.WorksheetNotFound:
             return self.ss.add_worksheet(title=name, rows=rows, cols=cols)
 
+    def _apply_banding(self, sheet, end_col, start_row=1):
+        try:
+            end_col = max(end_col, 1)
+            req = {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {
+                            "sheetId": sheet.id,
+                            "startRowIndex": start_row,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": end_col,
+                        },
+                        "rowProperties": {
+                            "headerColor": {"red": 1.0, "green": 0.6, "blue": 0.0},
+                            "firstBandColor": {"red": 1.0, "green": 0.98, "blue": 0.94},
+                            "secondBandColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                        },
+                    }
+                }
+            }
+            self.ss.batch_update({"requests": [req]})
+        except Exception as e:
+            log_msg(f"Banding failed: {e}")
+
     def _format(self):
         try:
             self.ws.format("A:R", {"backgroundColor":{"red":1,"green":1,"blue":1},"textFormat":{"fontFamily":"Bona Nova SC","fontSize":8,"bold":False}})
             self.ws.format("A1:R1", {"textFormat":{"bold":False,"fontSize":9,"fontFamily":"Bona Nova SC"},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
-            try:
-                band = {
-                    "addBanding":{
-                        "bandedRange":{
-                            "range":{"sheetId": self.ws.id, "startRowIndex":1, "startColumnIndex":0, "endColumnIndex":len(COLUMN_ORDER)},
-                            "rowProperties":{
-                                "headerColor":{"red":1.0,"green":0.6,"blue":0.0},
-                                "firstBandColor":{"red":1.0,"green":0.98,"blue":0.95},
-                                "secondBandColor":{"red":1.0,"green":1.0,"blue":1.0}
-                            }
-                        }
-                    }
-                }
-                self.ss.batch_update({"requests":[band]})
-            except Exception:
-                pass
+            self._apply_banding(self.ws, len(COLUMN_ORDER), start_row=1)
         except Exception as e:
             log_msg(f"Format failed: {e}")
+        try:
+            self.dashboard.format("A:K", {"textFormat":{"fontFamily":"Bona Nova SC","fontSize":8,"bold":False}})
+            self.dashboard.format("A1:K1", {"textFormat":{"bold":True,"fontSize":9,"fontFamily":"Bona Nova SC"},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
+            self._apply_banding(self.dashboard, self.dashboard.col_count, start_row=1)
+        except Exception as e:
+            log_msg(f"Dashboard format failed: {e}")
 
     def _load_existing(self):
         try:
@@ -655,8 +675,12 @@ def main():
             names = names[:MAX_PROFILES_PER_RUN]
         success = failed = 0
         run_stats = {"new":0, "updated":0, "unchanged":0}
+        start_time = time.time()
+        run_started = get_pkt_time()
+        trigger_type = "Scheduled" if os.getenv('GITHUB_EVENT_NAME','').lower()=='schedule' else "Manual"
         for i, nick in enumerate(names, 1):
-            log_msg(f"[{i}/{len(names)}] {nick}")
+            eta = calculate_eta(i-1, len(names), start_time)
+            log_msg(f"[{i}/{len(names)} | ETA {eta}] {nick}")
             try:
                 prof = scrape_profile(driver, nick)
                 if not prof:
@@ -685,8 +709,8 @@ def main():
             "New Profiles": run_stats.get('new',0),
             "Updated Profiles": run_stats.get('updated',0),
             "Unchanged Profiles": run_stats.get('unchanged',0),
-            "Trigger": ("Scheduled" if os.getenv('GITHUB_EVENT_NAME','').lower()=='schedule' else "Manual"),
-            "Start": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+            "Trigger": trigger_type,
+            "Start": run_started.strftime("%d-%b-%y %I:%M %p"),
             "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
         })
     finally:
