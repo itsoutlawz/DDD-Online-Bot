@@ -27,6 +27,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 # ------------ Google Sheets ------------
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import WorksheetNotFound, APIError
 
 # ------------ Configuration (Env) ------------
 LOGIN_URL = "https://damadam.pk/login/"
@@ -54,8 +55,9 @@ COLUMN_ORDER = [
     "POSTS", "PROFILE LINK", "INTRO", "SOURCE", "DATETIME SCRAP"
 ]
 COLUMN_TO_INDEX = {name: idx for idx, name in enumerate(COLUMN_ORDER)}
-HIGHLIGHT_EXCLUDE_COLUMNS = {"LAST POST", "LAST POST TIME", "JOINED", "PROFILE LINK", "SOURCE", "DATETIME SCRAP"}
+HIGHLIGHT_EXCLUDE_COLUMNS = {"LAST POST", "LAST POST TIME", "JOINED", "PROFILE LINK", "DATETIME SCRAP"}
 LINK_COLUMNS = {"IMAGE", "LAST POST", "PROFILE LINK"}
+ENABLE_CELL_HIGHLIGHT = False
 
 # ------------ Helpers ------------
 
@@ -322,10 +324,11 @@ def gsheets_client():
 class Sheets:
     def __init__(self, client):
         self.client = client
-        self.tags = {}
+        self.tags_mapping = {}
         self.existing = {}
         self.ss = client.open_by_url(SHEET_URL)
         self.ws = self._get_or_create("ProfilesOnline", cols=len(COLUMN_ORDER))
+        self.tags_sheet = self._get_sheet_if_exists("Tags")
         # Ensure headers exist for ProfilesOnline
         try:
             values = self.ws.get_all_values()
@@ -348,12 +351,20 @@ class Sheets:
             log_msg(f"Dashboard setup failed: {e}")
         self._format()
         self._load_existing()
+        self._load_tags_mapping()
 
     def _get_or_create(self, name, cols=20, rows=1000):
         try:
             return self.ss.worksheet(name)
-        except gspread.exceptions.WorksheetNotFound:
+        except WorksheetNotFound:
             return self.ss.add_worksheet(title=name, rows=rows, cols=cols)
+
+    def _get_sheet_if_exists(self, name):
+        try:
+            return self.ss.worksheet(name)
+        except WorksheetNotFound:
+            log_msg(f"{name} sheet not found, skipping optional features")
+            return None
 
     def _apply_banding(self, sheet, end_col, start_row=1):
         try:
@@ -376,8 +387,12 @@ class Sheets:
                 }
             }
             self.ss.batch_update({"requests": [req]})
-        except Exception as e:
-            log_msg(f"Banding failed: {e}")
+        except APIError as e:
+            message = str(e)
+            if "already has alternating background colors" in message:
+                log_msg(f"Banding already applied on {sheet.title}; skipping reapply")
+            else:
+                log_msg(f"Banding failed: {e}")
 
     def _format(self):
         try:
@@ -403,6 +418,33 @@ class Sheets:
             log_msg(f"Loaded {len(self.existing)} existing")
         except Exception as e:
             log_msg(f"Load existing failed: {e}")
+
+    def _load_tags_mapping(self):
+        self.tags_mapping = {}
+        if not self.tags_sheet:
+            return
+        try:
+            all_values = self.tags_sheet.get_all_values()
+            if not all_values or len(all_values) < 2:
+                return
+            headers = all_values[0]
+            for col_idx, header in enumerate(headers):
+                tag_name = clean_data(header)
+                if not tag_name:
+                    continue
+                for row in all_values[1:]:
+                    if col_idx < len(row):
+                        nickname = row[col_idx].strip()
+                        if nickname:
+                            key = nickname.lower()
+                            if key in self.tags_mapping:
+                                if tag_name not in self.tags_mapping[key]:
+                                    self.tags_mapping[key] += f", {tag_name}"
+                            else:
+                                self.tags_mapping[key] = tag_name
+            log_msg(f"Loaded {len(self.tags_mapping)} tags")
+        except Exception as e:
+            log_msg(f"Tags load failed: {e}")
 
     def update_dashboard(self, metrics: dict):
         try:
@@ -461,6 +503,10 @@ class Sheets:
         if profile.get("LAST POST TIME"):
             profile["LAST POST TIME"] = convert_relative_date_to_absolute(profile["LAST POST TIME"])
         profile["DATETIME SCRAP"] = get_pkt_time().strftime("%d-%b-%y %I:%M %p")
+        nickname_lower = nickname.lower()
+        tags_value = self.tags_mapping.get(nickname_lower)
+        if tags_value:
+            profile["TAGS"] = tags_value
         # Row values
         row_values = []
         for c in COLUMN_ORDER:
@@ -473,7 +519,8 @@ class Sheets:
             else:
                 v = clean_data(profile.get(c, ""))
             row_values.append(v)
-        key = nickname.lower(); existing = self.existing.get(key)
+        key = nickname_lower
+        existing = self.existing.get(key)
         if existing:
             before = {COLUMN_ORDER[i]: (existing['data'][i] if i < len(existing['data']) else "") for i in range(len(COLUMN_ORDER))}
             changed = []
@@ -484,7 +531,9 @@ class Sheets:
             # Insert at row 2
             self.ws.insert_row(row_values, 2); self._update_links(2, profile)
             if changed:
-                self._highlight(2, changed); self._add_notes(2, changed, before, row_values)
+                if ENABLE_CELL_HIGHLIGHT:
+                    self._highlight(2, changed)
+                self._add_notes(2, changed, before, row_values)
             # Delete old row (shift by +1 due to the insert)
             try:
                 old_row = existing['row'] + 1 if existing['row'] >= 2 else 3
