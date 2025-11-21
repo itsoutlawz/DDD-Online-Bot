@@ -1,7 +1,7 @@
 name: "DDD Online Bot"
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/25 * * * *'
     
   workflow_dispatch:
     inputs:
@@ -12,12 +12,12 @@ on:
       batch_size:
         description: 'Batch Size'
         required: false
-        default: '10'
+        default: '20'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 24
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,10 +64,10 @@ jobs:
           DAMADAM_PASSWORD_2: ${{ secrets.DAMADAM_PASSWORD_2 }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           MAX_PROFILES_PER_RUN: ${{ github.event.inputs.max_profiles || '0' }}
-          BATCH_SIZE: ${{ github.event.inputs.batch_size || '10' }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '20' }}
           MIN_DELAY: '0.5'
           MAX_DELAY: '0.6'
           PAGE_LOAD_TIMEOUT: '30'
-          SHEET_WRITE_DELAY: '1.1'
+          SHEET_WRITE_DELAY: '1.0'
         run: |
           python Scraper.py
