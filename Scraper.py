@@ -58,6 +58,20 @@ COLUMN_TO_INDEX = {name: idx for idx, name in enumerate(COLUMN_ORDER)}
 HIGHLIGHT_EXCLUDE_COLUMNS = {"LAST POST", "LAST POST TIME", "JOINED", "PROFILE LINK", "DATETIME SCRAP"}
 LINK_COLUMNS = {"IMAGE", "LAST POST", "PROFILE LINK"}
 ENABLE_CELL_HIGHLIGHT = False
+SUSPENSION_INDICATORS = [
+    "accounts suspend",
+    "aik se zyada fake accounts",
+    "abuse ya harassment",
+    "kisi aur user ki identity apnana",
+    "accounts suspend kiye",
+]
+NICK_LIST_SHEET = "NickList"
+NICK_LIST_HEADERS = [
+    "Nick Name",
+    "Times Seen",
+    "First Seen",
+    "Last Seen",
+]
 
 # ------------ Helpers ------------
 
@@ -98,6 +112,15 @@ def convert_relative_date_to_absolute(text: str) -> str:
         dt = get_pkt_time() - timedelta(seconds=amt*delta_map[unit])
         return dt.strftime("%d-%b-%y")
     return text
+
+def detect_suspension_reason(page: str) -> str | None:
+    if not page:
+        return None
+    lower = page.lower()
+    for indicator in SUSPENSION_INDICATORS:
+        if indicator in lower:
+            return indicator
+    return None
 
 def clean_text(text: str) -> str:
     if not text:
@@ -326,6 +349,8 @@ class Sheets:
         self.client = client
         self.tags_mapping = {}
         self.existing = {}
+        self.nick_list_existing = {}
+        self.nick_list_next_row = 2
         self.ss = client.open_by_url(SHEET_URL)
         self.ws = self._get_or_create("ProfilesOnline", cols=len(COLUMN_ORDER))
         self.tags_sheet = self._get_sheet_if_exists("Tags")
@@ -352,6 +377,7 @@ class Sheets:
         self._format()
         self._load_existing()
         self._load_tags_mapping()
+        self._ensure_nick_list()
 
     def _get_or_create(self, name, cols=20, rows=1000):
         try:
@@ -445,6 +471,91 @@ class Sheets:
             log_msg(f"Loaded {len(self.tags_mapping)} tags")
         except Exception as e:
             log_msg(f"Tags load failed: {e}")
+
+    def _ensure_nick_list(self):
+        try:
+            self.nick_list_ws = self._get_or_create(NICK_LIST_SHEET, cols=len(NICK_LIST_HEADERS))
+            values = self.nick_list_ws.get_all_values()
+            headers_present = values[0] if values else []
+            if headers_present[: len(NICK_LIST_HEADERS)] != NICK_LIST_HEADERS:
+                self.nick_list_ws.clear()
+                self.nick_list_ws.append_row(NICK_LIST_HEADERS)
+                values = self.nick_list_ws.get_all_values()
+            self.nick_list_next_row = len(values) + 1 if values else 2
+        except Exception as e:
+            log_msg(f"Nick list init failed: {e}")
+            self.nick_list_ws = None
+            return
+        self._load_nick_list()
+
+    def _load_nick_list(self):
+        if not getattr(self, 'nick_list_ws', None):
+            return
+        self.nick_list_existing = {}
+        try:
+            values = self.nick_list_ws.get_all_values()
+            for idx, row in enumerate(values[1:], start=2):
+                nickname = (row[0] if len(row) > 0 else '').strip()
+                if not nickname:
+                    continue
+                times_seen = row[1].strip() if len(row) > 1 else ""
+                first_seen = row[2].strip() if len(row) > 2 else ""
+                last_seen = row[3].strip() if len(row) > 3 else ""
+                try:
+                    times_val = int(times_seen)
+                except Exception:
+                    times_val = 0
+                self.nick_list_existing[nickname.lower()] = {
+                    "row": idx,
+                    "times": times_val,
+                    "first": first_seen,
+                    "last": last_seen,
+                }
+            self.nick_list_next_row = len(values) + 1 if values else 2
+        except Exception as e:
+            log_msg(f"Nick list load failed: {e}")
+
+    def record_nick_seen(self, nickname: str, seen_at: datetime | None = None):
+        if not nickname:
+            return
+        if not getattr(self, 'nick_list_ws', None):
+            return
+        seen_at = seen_at or get_pkt_time()
+        ts = seen_at.strftime("%d-%b-%y %I:%M %p")
+        key = nickname.strip().lower()
+        if not key:
+            return
+        entry = self.nick_list_existing.get(key)
+        if entry:
+            times = entry['times'] + 1
+            first_seen = entry['first'] or ts
+            last_seen = ts
+            row = entry['row']
+            try:
+                self.nick_list_ws.update(f"A{row}:D{row}", [[nickname, str(times), first_seen, last_seen]], value_input_option='USER_ENTERED')
+                time.sleep(SHEET_WRITE_DELAY)
+            except Exception as e:
+                log_msg(f"Nick list update failed for {nickname}: {e}")
+                return
+            entry['times'] = times
+            entry['last'] = last_seen
+        else:
+            first_seen = ts
+            last_seen = ts
+            row = self.nick_list_next_row
+            try:
+                self.nick_list_ws.append_row([nickname, "1", first_seen, last_seen])
+                time.sleep(SHEET_WRITE_DELAY)
+            except Exception as e:
+                log_msg(f"Nick list append failed for {nickname}: {e}")
+                return
+            self.nick_list_existing[key] = {
+                "row": row,
+                "times": 1,
+                "first": first_seen,
+                "last": last_seen,
+            }
+            self.nick_list_next_row += 1
 
     def update_dashboard(self, metrics: dict):
         try:
@@ -584,6 +695,7 @@ def scrape_profile(driver, nickname: str) -> dict | None:
 
         page_source = driver.page_source
         now = get_pkt_time()
+        suspend_reason = detect_suspension_reason(page_source)
         data = {
             "IMAGE":"",
             "NICK NAME": nickname,
@@ -604,6 +716,12 @@ def scrape_profile(driver, nickname: str) -> dict | None:
             "SOURCE":"Online",
             "DATETIME SCRAP": now.strftime("%d-%b-%y %I:%M %p"),
         }
+
+        if suspend_reason:
+            data['STATUS'] = "Suspended"
+            data['INTRO'] = f"Suspended: {suspend_reason}"[:250]
+            data['SUSPENSION_REASON'] = suspend_reason
+            return data
 
         if 'account suspended' in page_source.lower():
             data['STATUS']="Suspended"
@@ -722,7 +840,7 @@ def main():
         log_msg(f"Processing {len(names)} users...")
         if MAX_PROFILES_PER_RUN > 0:
             names = names[:MAX_PROFILES_PER_RUN]
-        success = failed = 0
+        success = failed = suspended_count = 0
         run_stats = {"new":0, "updated":0, "unchanged":0}
         start_time = time.time()
         run_started = get_pkt_time()
@@ -730,10 +848,17 @@ def main():
         for i, nick in enumerate(names, 1):
             eta = calculate_eta(i-1, len(names), start_time)
             log_msg(f"[{i}/{len(names)} | ETA {eta}] {nick}")
+            sheets.record_nick_seen(nick)
             try:
                 prof = scrape_profile(driver, nick)
                 if not prof:
                     raise RuntimeError("Profile scrape failed")
+                suspend_reason = prof.get("SUSPENSION_REASON")
+                if suspend_reason:
+                    sheets.write_profile(prof)
+                    suspended_count += 1
+                    log_msg(f"⚠️ {nick} skipped (suspended: {suspend_reason})")
+                    continue
                 result = sheets.write_profile(prof)
                 status = result.get("status","error") if result else "error"
                 if status in {"new","updated","unchanged"}:
@@ -762,6 +887,8 @@ def main():
             "Start": run_started.strftime("%d-%b-%y %I:%M %p"),
             "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
         })
+        if suspended_count:
+            print(f"   ⚠️ Suspended skipped: {suspended_count}")
     finally:
         try: driver.quit()
         except: pass
