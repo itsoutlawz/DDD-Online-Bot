@@ -186,52 +186,57 @@ Run statistics and metrics:
 
 ---
 
-## 🎯 How Smart Scheduling Works
+## 🎯 How Scheduling Works
 
 ```
-┌─────────────────────────────────────────┐
-│  Workflow Triggered (Every 15 min)      │
-└──────────────┬──────────────────────────┘
-               │
-               ▼
-        ┌──────────────┐
-        │ Fetch Online │
-        │   Profiles   │
-        └──────┬───────┘
-               │
-               ▼
-        ┌──────────────────┐
-        │ Scrape & Update  │
-        │  All Profiles    │
-        └──────┬───────────┘
-               │
-               ▼
-        ┌──────────────────────────┐
-        │ Measure Execution Time   │
-        └──────┬───────────────────┘
-               │
-        ┌──────┴──────┐
-        │             │
-        ▼             ▼
-   < 15 min      ≥ 15 min
-        │             │
-        ▼             ▼
-    Wait for    Start Next
-   15 min mark   Run Now
-        │             │
-        └──────┬──────┘
-               │
-               ▼
-        ┌──────────────┐
-        │ Next Cycle   │
-        └──────────────┘
+GitHub Actions Scheduler (Every 15 min)
+        │
+        ▼
+┌──────────────────────────┐
+│ Trigger Workflow         │
+│ (Cron: */15 * * * *)     │
+└──────────┬───────────────┘
+           │
+           ▼
+    ┌──────────────────┐
+    │ Start Runner     │
+    │ (Timeout: 30min) │
+    └──────┬───────────┘
+           │
+           ▼
+    ┌──────────────────────┐
+    │ Fetch Online Users   │
+    │ Scrape All Profiles  │
+    │ Update Google Sheets │
+    └──────┬───────────────┘
+           │
+           ▼
+    ┌──────────────────┐
+    │ Exit (Success)   │
+    │ Runner Stops     │
+    └──────────────────┘
+           │
+           ▼
+    Wait 15 minutes
+           │
+           ▼
+    Repeat
 ```
+
+**Architecture:**
+
+- ✅ Script runs **once per trigger** (no infinite loop)
+- ✅ GitHub's cron scheduler handles 15-minute intervals
+- ✅ Runner exits after completion (no resource waste)
+- ✅ Timeout set to 30 minutes (safe margin for 50-60 profiles)
+- ✅ No overlapping runs (GitHub prevents concurrent jobs)
 
 **Benefits:**
-- ✅ Always completes full profile list (no timeouts)
-- ✅ No "Run Cancelled" emails
-- ✅ Consistent 15-minute intervals
-- ✅ Handles variable scraping times gracefully
+
+- ✅ No more multiple runners stacking up
+- ✅ Clean logs (one run per workflow execution)
+- ✅ Efficient resource usage
+- ✅ Predictable behavior
 
 ---
 

@@ -863,117 +863,98 @@ def scrape_profile(driver, nickname: str) -> dict | None:
         log_msg(f"❌ Error scraping {nickname}: {str(e)[:60]}")
         return None
 
-# ------------ Main with Smart Scheduling & Quota Handling ------------
+# ------------ Main (Single Run) with Quota Handling ------------
 
 def main():
     print("\n" + "="*70)
-    print("🌐 DamaDam Online Bot v3.2.1 (Smart Scheduling + Quota Aware)")
+    print("🌐 DamaDam Online Bot v3.2.1 (Quota Aware)")
     print("="*70)
 
     if not USERNAME or not PASSWORD:
         print("❌ Missing DAMADAM_USERNAME / DAMADAM_PASSWORD"); sys.exit(1)
     
-    RUN_INTERVAL = 15 * 60  # 15 minutes in seconds
-    run_count = 0
+    run_started_dt = get_pkt_time()
     
-    while True:
-        run_count += 1
-        run_start_time = time.time()
-        run_started_dt = get_pkt_time()
-        
-        print(f"\n{'='*70}")
-        print(f"📊 RUN #{run_count} | Started: {run_started_dt.strftime('%H:%M:%S')}")
-        print(f"{'='*70}")
-        
-        try:
-            client = gsheets_client()
-            sheets = Sheets(client)
+    print(f"\n{'='*70}")
+    print(f"📊 RUN | Started: {run_started_dt.strftime('%H:%M:%S')}")
+    print(f"{'='*70}")
+    
+    try:
+        client = gsheets_client()
+        sheets = Sheets(client)
 
-            driver = setup_browser()
-            if not driver:
-                print("❌ Browser setup failed"); sys.exit(1)
-            try:
-                if not login(driver):
-                    print("❌ Login failed"); driver.quit(); sys.exit(1)
-                names = fetch_online_nicknames(driver)
-                log_msg(f"📋 Processing {len(names)} users...")
-                # Always process the complete list (ignore MAX_PROFILES_PER_RUN)
-                success = failed = suspended_count = skipped_quota = 0
-                run_stats = {"new":0, "updated":0, "unchanged":0}
-                start_time = time.time()
-                trigger_type = "Scheduled" if os.getenv('GITHUB_EVENT_NAME','').lower()=='schedule' else "Manual"
-                for i, nick in enumerate(names, 1):
-                    eta = calculate_eta(i-1, len(names), start_time)
-                    log_msg(f"[{i:3d}/{len(names)} | ETA {eta:>7s}] {nick}")
-                    sheets.record_nick_seen(nick)
-                    try:
-                        prof = scrape_profile(driver, nick)
-                        if not prof:
-                            raise RuntimeError("Profile scrape failed")
-                        suspend_reason = prof.get("SUSPENSION_REASON")
-                        if suspend_reason:
-                            sheets.write_profile(prof)
-                            suspended_count += 1
-                            log_msg(f"⚠️ {nick} skipped (suspended: {suspend_reason})")
-                            continue
-                        result = sheets.write_profile(prof)
-                        status = result.get("status","error") if result else "error"
-                        if status in {"new","updated","unchanged"}:
-                            success += 1
-                            run_stats[status] += 1
-                        else:
-                            raise RuntimeError(result.get("error","Write failed") if result else "Write failed")
-                    except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower():
-                            skipped_quota += 1
-                            log_msg(f"⚠️ Quota limit hit, skipping: {nick}")
-                        else:
-                            failed += 1
-                            log_msg(f"❌ Error: {str(e)[:50]}")
-                    if BATCH_SIZE > 0 and i % BATCH_SIZE == 0 and i < len(names):
-                        log_msg("⏸️ Batch cool-off"); adaptive.on_batch(); time.sleep(3)
-                    adaptive.sleep()
-                print(f"\n{'='*70}")
-                print(f"✅ RUN #{run_count} COMPLETED")
-                print(f"{'='*70}")
-                print(f"📊 Results: {success} Success | {failed} Failed | {skipped_quota} Quota-Skipped | {suspended_count} Suspended")
-                print(f"📈 Breakdown: {run_stats['new']} New | {run_stats['updated']} Updated | {run_stats['unchanged']} Unchanged")
-                # Dashboard update
+        driver = setup_browser()
+        if not driver:
+            print("❌ Browser setup failed"); sys.exit(1)
+        try:
+            if not login(driver):
+                print("❌ Login failed"); driver.quit(); sys.exit(1)
+            names = fetch_online_nicknames(driver)
+            log_msg(f"📋 Processing {len(names)} users...")
+            # Always process the complete list (ignore MAX_PROFILES_PER_RUN)
+            success = failed = suspended_count = skipped_quota = 0
+            run_stats = {"new":0, "updated":0, "unchanged":0}
+            start_time = time.time()
+            trigger_type = "Scheduled" if os.getenv('GITHUB_EVENT_NAME','').lower()=='schedule' else "Manual"
+            for i, nick in enumerate(names, 1):
+                eta = calculate_eta(i-1, len(names), start_time)
+                log_msg(f"[{i:3d}/{len(names)} | ETA {eta:>7s}] {nick}")
+                sheets.record_nick_seen(nick)
                 try:
-                    sheets.update_dashboard({
-                        "Run Number": run_count,
-                        "Last Run": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
-                        "Profiles Processed": len(names),
-                        "Success": success,
-                        "Failed": failed,
-                        "New Profiles": run_stats.get('new',0),
-                        "Updated Profiles": run_stats.get('updated',0),
-                        "Unchanged Profiles": run_stats.get('unchanged',0),
-                        "Trigger": trigger_type,
-                        "Start": run_started_dt.strftime("%d-%b-%y %I:%M %p"),
-                        "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
-                    })
+                    prof = scrape_profile(driver, nick)
+                    if not prof:
+                        raise RuntimeError("Profile scrape failed")
+                    suspend_reason = prof.get("SUSPENSION_REASON")
+                    if suspend_reason:
+                        sheets.write_profile(prof)
+                        suspended_count += 1
+                        log_msg(f"⚠️ {nick} skipped (suspended: {suspend_reason})")
+                        continue
+                    result = sheets.write_profile(prof)
+                    status = result.get("status","error") if result else "error"
+                    if status in {"new","updated","unchanged"}:
+                        success += 1
+                        run_stats[status] += 1
+                    else:
+                        raise RuntimeError(result.get("error","Write failed") if result else "Write failed")
                 except Exception as e:
-                    log_msg(f"⚠️ Dashboard update failed: {e}")
-            finally:
-                try: driver.quit()
-                except: pass
-        except Exception as e:
-            log_msg(f"❌ Run failed: {e}")
-        
-        # Smart scheduling: wait for next run
-        elapsed = time.time() - run_start_time
-        elapsed_min = elapsed / 60
-        if elapsed >= RUN_INTERVAL:
-            log_msg(f"⏱️ Run took {elapsed_min:.1f} min (≥ 15min). Starting next run immediately...")
-            print()
-            continue
-        else:
-            wait_time = RUN_INTERVAL - elapsed
-            wait_min = wait_time / 60
-            log_msg(f"⏱️ Run took {elapsed_min:.1f} min. Waiting {wait_min:.1f} min before next run...")
-            print(f"⏳ Next run at: {(get_pkt_time() + timedelta(seconds=wait_time)).strftime('%H:%M:%S')}")
-            time.sleep(wait_time)
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        skipped_quota += 1
+                        log_msg(f"⚠️ Quota limit hit, skipping: {nick}")
+                    else:
+                        failed += 1
+                        log_msg(f"❌ Error: {str(e)[:50]}")
+                if BATCH_SIZE > 0 and i % BATCH_SIZE == 0 and i < len(names):
+                    log_msg("⏸️ Batch cool-off"); adaptive.on_batch(); time.sleep(3)
+                adaptive.sleep()
+            print(f"\n{'='*70}")
+            print(f"✅ RUN COMPLETED")
+            print(f"{'='*70}")
+            print(f"📊 Results: {success} Success | {failed} Failed | {skipped_quota} Quota-Skipped | {suspended_count} Suspended")
+            print(f"📈 Breakdown: {run_stats['new']} New | {run_stats['updated']} Updated | {run_stats['unchanged']} Unchanged")
+            # Dashboard update
+            try:
+                sheets.update_dashboard({
+                    "Run Number": 1,
+                    "Last Run": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+                    "Profiles Processed": len(names),
+                    "Success": success,
+                    "Failed": failed,
+                    "New Profiles": run_stats.get('new',0),
+                    "Updated Profiles": run_stats.get('updated',0),
+                    "Unchanged Profiles": run_stats.get('unchanged',0),
+                    "Trigger": trigger_type,
+                    "Start": run_started_dt.strftime("%d-%b-%y %I:%M %p"),
+                    "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+                })
+            except Exception as e:
+                log_msg(f"⚠️ Dashboard update failed: {e}")
+        finally:
+            try: driver.quit()
+            except: pass
+    except Exception as e:
+        log_msg(f"❌ Run failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
