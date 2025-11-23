@@ -1,4 +1,4 @@
-name: "⨌DDD Online Bot🔸"
+name: "DDD Online Bot"
 
 on:
   schedule:
@@ -17,7 +17,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,4 +71,3 @@ jobs:
           SHEET_WRITE_DELAY: '1.0'
         run: |
           python Scraper.py
-
