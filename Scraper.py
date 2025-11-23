@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-DamaDam Online Bot - Single File v3.2.1
+🔶 ⨌Damada🔸Online〰Scraper v3.2.2▪
+DamaDam Online Bot - Single File v3.2.2
 - Scrapes online users and writes to Google Sheets (ProfilesOnline)
 - Inserts new/updated rows at Row 2
 - Duplicate check by Nickname (Col B)
@@ -895,3 +896,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
