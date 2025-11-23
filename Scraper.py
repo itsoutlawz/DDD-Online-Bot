@@ -295,16 +295,25 @@ def load_cookies(driver):
 
 def login(driver) -> bool:
     try:
+        # Step 1: Try loading cookies first
+        log_msg("🔐 Checking for saved cookies...")
         driver.get(HOME_URL); time.sleep(2)
         if load_cookies(driver):
             driver.refresh(); time.sleep(3)
             if 'login' not in driver.current_url.lower():
-                log_msg("Login via cookies")
+                log_msg("✅ Login via cookies successful")
                 return True
+            log_msg("⚠️ Cookies expired, attempting fresh login...")
+        
+        # Step 2: Try Account 1, then Account 2
         driver.get(LOGIN_URL); time.sleep(3)
         for label, u, p in [("Account 1", USERNAME, PASSWORD), ("Account 2", USERNAME_2, PASSWORD_2)]:
-            if not u or not p: continue
+            if not u or not p:
+                if u or p:
+                    log_msg(f"⚠️ {label} incomplete (missing username or password)")
+                continue
             try:
+                log_msg(f"🔑 Attempting {label} login...")
                 nick = WebDriverWait(driver,8).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#nick, input[name='nick']")))
                 try:
                     passf = driver.find_element(By.CSS_SELECTOR, "#pass, input[name='pass']")
@@ -315,14 +324,18 @@ def login(driver) -> bool:
                 passf.clear(); passf.send_keys(p); time.sleep(0.5)
                 btn.click(); time.sleep(4)
                 if 'login' not in driver.current_url.lower():
-                    log_msg(f"{label} login OK")
+                    log_msg(f"✅ {label} login successful")
                     save_cookies(driver)
                     return True
-            except Exception:
+                else:
+                    log_msg(f"❌ {label} login failed (still on login page)")
+            except Exception as e:
+                log_msg(f"❌ {label} login error: {str(e)[:50]}")
                 continue
+        log_msg("❌ All login attempts failed")
         return False
     except Exception as e:
-        log_msg(f"Login error: {e}")
+        log_msg(f"❌ Login error: {e}")
         return False
 
 # ------------ Google Sheets ------------
@@ -422,17 +435,45 @@ class Sheets:
 
     def _format(self):
         try:
-            self.ws.format("A:R", {"backgroundColor":{"red":1,"green":1,"blue":1},"textFormat":{"fontFamily":"Bona Nova SC","fontSize":8,"bold":False}})
-            self.ws.format("A1:R1", {"textFormat":{"bold":False,"fontSize":9,"fontFamily":"Bona Nova SC"},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
+            # ProfilesOnline: Courier New, header bold, alternating rows
+            self.ws.format("A:R", {"textFormat":{"fontFamily":"Courier New","fontSize":8,"bold":False}})
+            self.ws.format("A1:R1", {"textFormat":{"fontFamily":"Courier New","fontSize":9,"bold":True},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
+            try: self.ws.freeze(rows=1)
+            except: pass
             self._apply_banding(self.ws, len(COLUMN_ORDER), start_row=1)
+            # Sort by DATETIME SCRAP (Col R) descending
+            try:
+                self.ws.sort((18, "des"), range="A1:R")
+            except: pass
         except Exception as e:
-            log_msg(f"Format failed: {e}")
+            log_msg(f"ProfilesOnline format failed: {e}")
         try:
-            self.dashboard.format("A:K", {"textFormat":{"fontFamily":"Bona Nova SC","fontSize":8,"bold":False}})
-            self.dashboard.format("A1:K1", {"textFormat":{"bold":True,"fontSize":9,"fontFamily":"Bona Nova SC"},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
+            # Dashboard: Courier New, header bold, alternating rows
+            self.dashboard.format("A:K", {"textFormat":{"fontFamily":"Courier New","fontSize":8,"bold":False}})
+            self.dashboard.format("A1:K1", {"textFormat":{"fontFamily":"Courier New","fontSize":9,"bold":True},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
+            try: self.dashboard.freeze(rows=1)
+            except: pass
             self._apply_banding(self.dashboard, self.dashboard.col_count, start_row=1)
+            # Sort by Timestamp (Col B) descending
+            try:
+                self.dashboard.sort((2, "des"), range="A1:K")
+            except: pass
         except Exception as e:
             log_msg(f"Dashboard format failed: {e}")
+        try:
+            # NickList: Courier New, header bold, alternating rows
+            if hasattr(self, 'nick_list_ws') and self.nick_list_ws:
+                self.nick_list_ws.format("A:D", {"textFormat":{"fontFamily":"Courier New","fontSize":8,"bold":False}})
+                self.nick_list_ws.format("A1:D1", {"textFormat":{"fontFamily":"Courier New","fontSize":9,"bold":True},"horizontalAlignment":"CENTER","backgroundColor":{"red":1.0,"green":0.6,"blue":0.0}})
+                try: self.nick_list_ws.freeze(rows=1)
+                except: pass
+                self._apply_banding(self.nick_list_ws, 4, start_row=1)
+                # Sort by Last Seen (Col D) descending, then Nick Name (Col A)
+                try:
+                    self.nick_list_ws.sort((4, "des"), (1, "asc"), range="A1:D")
+                except: pass
+        except Exception as e:
+            log_msg(f"NickList format failed: {e}")
 
     def _load_existing(self):
         try:
@@ -532,10 +573,10 @@ class Sheets:
             last_seen = ts
             row = entry['row']
             try:
-                self.nick_list_ws.update(f"A{row}:D{row}", [[nickname, str(times), first_seen, last_seen]], value_input_option='USER_ENTERED')
+                self.nick_list_ws.update(range_name=f"A{row}:D{row}", values=[[nickname, str(times), first_seen, last_seen]], value_input_option='USER_ENTERED')
                 time.sleep(SHEET_WRITE_DELAY)
             except Exception as e:
-                log_msg(f"Nick list update failed for {nickname}: {e}")
+                log_msg(f"⚠️ Nick update skipped (quota): {nickname}")
                 return
             entry['times'] = times
             entry['last'] = last_seen
@@ -547,7 +588,7 @@ class Sheets:
                 self.nick_list_ws.append_row([nickname, "1", first_seen, last_seen])
                 time.sleep(SHEET_WRITE_DELAY)
             except Exception as e:
-                log_msg(f"Nick list append failed for {nickname}: {e}")
+                log_msg(f"⚠️ Nick append skipped (quota): {nickname}")
                 return
             self.nick_list_existing[key] = {
                 "row": row,
@@ -588,8 +629,12 @@ class Sheets:
                 formula = f'=HYPERLINK("{val}", "Post")'
             else:
                 formula = f'=HYPERLINK("{val}", "Profile")'
-            self.ws.update(values=[[formula]], range_name=cell, value_input_option='USER_ENTERED')
-            time.sleep(SHEET_WRITE_DELAY)
+            try:
+                self.ws.update(range_name=cell, values=[[formula]], value_input_option='USER_ENTERED')
+                time.sleep(SHEET_WRITE_DELAY)
+            except Exception as e:
+                log_msg(f"⚠️ Link update skipped (quota): {col}")
+                continue
 
     def _highlight(self, row_idx, indices):
         for idx in indices:
@@ -818,21 +863,27 @@ def scrape_profile(driver, nickname: str) -> dict | None:
         log_msg(f"❌ Error scraping {nickname}: {str(e)[:60]}")
         return None
 
-# ------------ Main with Smart Scheduling ------------
+# ------------ Main with Smart Scheduling & Quota Handling ------------
 
 def main():
-    print("\n" + "="*60)
-    print("🌐 DamaDam Online Bot v3.2.1 (Smart Scheduling)")
-    print("="*60)
+    print("\n" + "="*70)
+    print("🌐 DamaDam Online Bot v3.2.1 (Smart Scheduling + Quota Aware)")
+    print("="*70)
 
     if not USERNAME or not PASSWORD:
         print("❌ Missing DAMADAM_USERNAME / DAMADAM_PASSWORD"); sys.exit(1)
     
     RUN_INTERVAL = 15 * 60  # 15 minutes in seconds
+    run_count = 0
     
     while True:
+        run_count += 1
         run_start_time = time.time()
         run_started_dt = get_pkt_time()
+        
+        print(f"\n{'='*70}")
+        print(f"📊 RUN #{run_count} | Started: {run_started_dt.strftime('%H:%M:%S')}")
+        print(f"{'='*70}")
         
         try:
             client = gsheets_client()
@@ -845,15 +896,15 @@ def main():
                 if not login(driver):
                     print("❌ Login failed"); driver.quit(); sys.exit(1)
                 names = fetch_online_nicknames(driver)
-                log_msg(f"Processing {len(names)} users...")
+                log_msg(f"📋 Processing {len(names)} users...")
                 # Always process the complete list (ignore MAX_PROFILES_PER_RUN)
-                success = failed = suspended_count = 0
+                success = failed = suspended_count = skipped_quota = 0
                 run_stats = {"new":0, "updated":0, "unchanged":0}
                 start_time = time.time()
                 trigger_type = "Scheduled" if os.getenv('GITHUB_EVENT_NAME','').lower()=='schedule' else "Manual"
                 for i, nick in enumerate(names, 1):
                     eta = calculate_eta(i-1, len(names), start_time)
-                    log_msg(f"[{i}/{len(names)} | ETA {eta}] {nick}")
+                    log_msg(f"[{i:3d}/{len(names)} | ETA {eta:>7s}] {nick}")
                     sheets.record_nick_seen(nick)
                     try:
                         prof = scrape_profile(driver, nick)
@@ -873,28 +924,37 @@ def main():
                         else:
                             raise RuntimeError(result.get("error","Write failed") if result else "Write failed")
                     except Exception as e:
-                        failed += 1
-                        log_msg(f"Write error: {e}")
+                        if "429" in str(e) or "quota" in str(e).lower():
+                            skipped_quota += 1
+                            log_msg(f"⚠️ Quota limit hit, skipping: {nick}")
+                        else:
+                            failed += 1
+                            log_msg(f"❌ Error: {str(e)[:50]}")
                     if BATCH_SIZE > 0 and i % BATCH_SIZE == 0 and i < len(names):
-                        log_msg("Batch cool-off"); adaptive.on_batch(); time.sleep(3)
+                        log_msg("⏸️ Batch cool-off"); adaptive.on_batch(); time.sleep(3)
                     adaptive.sleep()
-                print("\n✅ Run completed")
+                print(f"\n{'='*70}")
+                print(f"✅ RUN #{run_count} COMPLETED")
+                print(f"{'='*70}")
+                print(f"📊 Results: {success} Success | {failed} Failed | {skipped_quota} Quota-Skipped | {suspended_count} Suspended")
+                print(f"📈 Breakdown: {run_stats['new']} New | {run_stats['updated']} Updated | {run_stats['unchanged']} Unchanged")
                 # Dashboard update
-                sheets.update_dashboard({
-                    "Run Number": 1,
-                    "Last Run": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
-                    "Profiles Processed": len(names),
-                    "Success": success,
-                    "Failed": failed,
-                    "New Profiles": run_stats.get('new',0),
-                    "Updated Profiles": run_stats.get('updated',0),
-                    "Unchanged Profiles": run_stats.get('unchanged',0),
-                    "Trigger": trigger_type,
-                    "Start": run_started_dt.strftime("%d-%b-%y %I:%M %p"),
-                    "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
-                })
-                if suspended_count:
-                    print(f"   ⚠️ Suspended skipped: {suspended_count}")
+                try:
+                    sheets.update_dashboard({
+                        "Run Number": run_count,
+                        "Last Run": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+                        "Profiles Processed": len(names),
+                        "Success": success,
+                        "Failed": failed,
+                        "New Profiles": run_stats.get('new',0),
+                        "Updated Profiles": run_stats.get('updated',0),
+                        "Unchanged Profiles": run_stats.get('unchanged',0),
+                        "Trigger": trigger_type,
+                        "Start": run_started_dt.strftime("%d-%b-%y %I:%M %p"),
+                        "End": get_pkt_time().strftime("%d-%b-%y %I:%M %p"),
+                    })
+                except Exception as e:
+                    log_msg(f"⚠️ Dashboard update failed: {e}")
             finally:
                 try: driver.quit()
                 except: pass
@@ -903,12 +963,16 @@ def main():
         
         # Smart scheduling: wait for next run
         elapsed = time.time() - run_start_time
+        elapsed_min = elapsed / 60
         if elapsed >= RUN_INTERVAL:
-            log_msg(f"⏱️ Run took {elapsed:.0f}s (> 15min). Starting next run immediately...")
+            log_msg(f"⏱️ Run took {elapsed_min:.1f} min (≥ 15min). Starting next run immediately...")
+            print()
             continue
         else:
             wait_time = RUN_INTERVAL - elapsed
-            log_msg(f"⏱️ Run took {elapsed:.0f}s. Waiting {wait_time:.0f}s before next run...")
+            wait_min = wait_time / 60
+            log_msg(f"⏱️ Run took {elapsed_min:.1f} min. Waiting {wait_min:.1f} min before next run...")
+            print(f"⏳ Next run at: {(get_pkt_time() + timedelta(seconds=wait_time)).strftime('%H:%M:%S')}")
             time.sleep(wait_time)
 
 if __name__ == "__main__":

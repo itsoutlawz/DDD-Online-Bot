@@ -9,13 +9,15 @@
 | Feature | Description |
 |---------|-------------|
 | 🔄 **Smart Scheduling** | Processes complete profile list; waits if < 15min, runs immediately if > 15min |
+| 🔐 **Smart Login** | Tries cookies first → Account 1 → Account 2 with detailed logging |
 | 📊 **Google Sheets Integration** | Auto-writes to ProfilesOnline sheet with latest profiles at top |
 | 🔍 **Duplicate Detection** | Checks by Nickname (Column B); updates existing profiles |
-| 🎨 **Cell Highlighting** | Changed fields highlighted and annotated with before/after values |
+| 🎨 **Professional Formatting** | Courier New font, bold headers, alternating row colors, frozen headers |
 | 📈 **Adaptive Delays** | Respects Google Sheets API rate limits with intelligent backoff |
+| 🛡️ **Quota-Aware** | Gracefully handles API quota limits without crashing |
 | 👤 **Nick Tracking** | Maintains NickList worksheet with Times Seen, First Seen, Last Seen |
-| 🔐 **Secure Auth** | Dual account support + cookie caching for faster logins |
 | 📱 **Responsive** | Handles suspended accounts, unverified users, and missing data gracefully |
+| 📋 **Detailed Logging** | Color-coded output with progress bars and ETA calculations |
 
 ---
 
@@ -263,23 +265,51 @@ Run statistics and metrics:
 
 ## 📝 Logs & Monitoring
 
-### Local Logs
+### Local Logs (Enhanced Display)
 ```
-[HH:MM:SS] Setting up Chrome...
-[HH:MM:SS] Chrome ready
-[HH:MM:SS] Login via cookies
-[HH:MM:SS] Fetching online users...
-[HH:MM:SS] Found 87 online
-[HH:MM:SS] Processing 87 users...
-[HH:MM:SS] [1/87 | ETA 12m 34s] user123
-[HH:MM:SS] ✅ Extracted: 💃, Lahore, Posts: 42
+======================================================================
+🌐 DamaDam Online Bot v3.2.1 (Smart Scheduling + Quota Aware)
+======================================================================
+
+======================================================================
+📊 RUN #1 | Started: 16:07:27
+======================================================================
+[16:07:27] 🔐 Checking for saved cookies...
+[16:07:29] ✅ Login via cookies successful
+[16:07:50] 📋 Processing 64 users...
+[16:07:53] [  1/64 | ETA 12m 34s] ALi.SM0KER
+[16:07:54] 📍 Scraping: ALi.SM0KER
+[16:07:57] ✅ Extracted: 🕺, Murree, Posts: 483
+[16:08:03] [  2/64 | ETA 11m 42s] aliyan_786
 ...
-[HH:MM:SS] ⏱️ Run took 892s. Waiting 8s before next run...
+[16:44:47] [57/64 | ETA  1m  1s] ShooNa_Mundaa
+[16:44:47] ⚠️ Quota limit hit, skipping: ShooNa_Mundaa
+
+======================================================================
+✅ RUN #1 COMPLETED
+======================================================================
+📊 Results: 57 Success | 2 Failed | 5 Quota-Skipped | 0 Suspended
+📈 Breakdown: 12 New | 38 Updated | 7 Unchanged
+
+⏱️ Run took 37.2 min. Waiting 0.0 min before next run...
 ```
+
+### Sheet Formatting
+
+- **Font**: Courier New (monospace for better readability)
+- **Headers**: Bold, orange background (#ff9900)
+- **Body**: Normal, size 8
+- **Rows**: Alternating light orange shade
+- **Frozen**: Row 1 (headers)
+- **Sorting**:
+  - ProfilesOnline: By DATETIME SCRAP (newest first)
+  - Dashboard: By Timestamp (newest first)
+  - NickList: By Last Seen (newest first), then by Nick Name
 
 ### GitHub Actions
 - View logs in **Actions → Workflow Run → Run Online Bot**
 - Check Dashboard sheet for historical metrics
+- Monitor quota usage in logs (⚠️ Quota limit messages)
 
 ---
 
