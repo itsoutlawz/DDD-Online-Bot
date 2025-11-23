@@ -1,4 +1,4 @@
-name: "DDD Online Bot"
+name: "⨌DDD Online Bot🔸"
 
 on:
   schedule:
@@ -71,3 +71,4 @@ jobs:
           SHEET_WRITE_DELAY: '1.0'
         run: |
           python Scraper.py
+
