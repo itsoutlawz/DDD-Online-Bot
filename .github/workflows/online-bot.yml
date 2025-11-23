@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       max_profiles:
-        description: 'Max Profiles (0 = unlimited)'
+        description: 'Max Profiles (1 = unlimited)'
         required: false
         default: '0'
       batch_size:
@@ -70,4 +70,11 @@ jobs:
           PAGE_LOAD_TIMEOUT: '30'
           SHEET_WRITE_DELAY: '1.0'
         run: |
-          python Scraper.py
+          for i in 1 2; do
+            echo "===== Scraper run #$i ====="
+            python Scraper.py || echo "Run #$i failed"
+            if [ "$i" -eq 1 ]; then
+              echo "Sleeping 120 seconds before next run..."
+              sleep 120
+            fi
+          done
