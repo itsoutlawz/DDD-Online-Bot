@@ -6,7 +6,7 @@ concurrency:
 
 on:
   schedule:
-    - cron: '*/20 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       max_profiles:
@@ -16,12 +16,12 @@ on:
       batch_size:
         description: 'Batch Size'
         required: false
-        default: '10'
+        default: '20'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -76,3 +76,4 @@ jobs:
           SHEET_WRITE_DELAY: '1.0'
         run: |
           python Scraper.py
+
