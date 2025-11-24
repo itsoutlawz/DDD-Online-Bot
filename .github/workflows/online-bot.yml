@@ -6,7 +6,7 @@ concurrency:
 
 on:
   schedule:
-    - cron: '*/25 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       max_profiles:
@@ -76,5 +76,6 @@ jobs:
           SHEET_WRITE_DELAY: '1.0'
         run: |
           python Scraper.py
+
 
 
