@@ -2,7 +2,7 @@ name: "DDD Online Bot"
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/21 * * * *'
   workflow_dispatch:
     inputs:
       max_profiles:
@@ -17,7 +17,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,3 +71,4 @@ jobs:
           SHEET_WRITE_DELAY: '1.0'
         run: |
           python Scraper.py
+
