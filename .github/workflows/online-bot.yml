@@ -2,12 +2,11 @@ name: "DDD Online Bot"
 
 on:
   schedule:
-    # Every hour at minute 0 (UTC)
-    - cron: '0 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       max_profiles:
-        description: 'Max Profiles (1 = unlimited)'
+        description: 'Max Profiles (0 = unlimited)'
         required: false
         default: '0'
       batch_size:
@@ -18,7 +17,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,11 +70,4 @@ jobs:
           PAGE_LOAD_TIMEOUT: '30'
           SHEET_WRITE_DELAY: '1.0'
         run: |
-          for i in 1 2 3; do
-            echo "===== Scraper run #$i ====="
-            python Scraper.py || echo "Run #$i failed"
-            if [ "$i" -lt 3 ]; then
-              echo "Sleeping 120 seconds before next run..."
-              sleep 120
-            fi
-          done
+          python Scraper.py
