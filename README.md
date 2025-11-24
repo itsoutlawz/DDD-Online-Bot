@@ -113,20 +113,19 @@ Go to **Settings → Secrets and variables → Actions** and add:
 ### Step 4: Workflow Configuration
 
 The workflow runs:
-- **Automatically**: Every 15 minutes (cron: `*/15 * * * *`)
+- **Automatically**: Every hour at minute 0 (cron: `0 * * * *`, times are in UTC)
 - **Manually**: Via GitHub Actions dispatch
 
-#### Adjust Schedule
+Each workflow execution:
+- Starts one GitHub Actions runner (timeout: 30 minutes)
+- Runs `Scraper.py` **3 times in a row** inside the same job
+- Waits **2 minutes** between each run (about 4 minutes total gap across 3 runs)
 
-Edit `.github/workflows/online-bot.yml`:
+High-level behavior per hour (example):
 
-```yaml
-on:
-  schedule:
-    - cron: '*/15 * * * *'  # Every 15 minutes
-    # - cron: '0 */6 * * *'  # Every 6 hours
-    # - cron: '0 9 * * *'    # Daily at 9 AM UTC
-```
+- 09:00 — Workflow starts, Run #1 → wait 2 min → Run #2 → wait 2 min → Run #3 → job completes
+- 10:00 — Next workflow starts with the same 3-run cycle
+- 11:00 — Next workflow starts, and so on
 
 ---
 
@@ -189,12 +188,12 @@ Run statistics and metrics:
 ## 🎯 How Scheduling Works
 
 ```
-GitHub Actions Scheduler (Every 15 min)
+GitHub Actions Scheduler (Every hour at minute 0)
         │
         ▼
 ┌──────────────────────────┐
 │ Trigger Workflow         │
-│ (Cron: */15 * * * *)     │
+│ (Cron: 0 * * * *)        │
 └──────────┬───────────────┘
            │
            ▼
@@ -204,37 +203,51 @@ GitHub Actions Scheduler (Every 15 min)
     └──────┬───────────┘
            │
            ▼
-    ┌──────────────────────┐
-    │ Fetch Online Users   │
-    │ Scrape All Profiles  │
-    │ Update Google Sheets │
-    └──────┬───────────────┘
-           │
-           ▼
+    ┌─────────────────────────────┐
+    │ Run 1: Scrape all profiles  │
+    └──────────┬──────────────────┘
+               │
+               ▼
+        Wait 2 minutes
+               │
+               ▼
+    ┌─────────────────────────────┐
+    │ Run 2: Scrape all profiles  │
+    └──────────┬──────────────────┘
+               │
+               ▼
+        Wait 2 minutes
+               │
+               ▼
+    ┌─────────────────────────────┐
+    │ Run 3: Scrape all profiles  │
+    └──────────┬──────────────────┘
+               │
+               ▼
     ┌──────────────────┐
     │ Exit (Success)   │
     │ Runner Stops     │
     └──────────────────┘
-           │
-           ▼
-    Wait 15 minutes
-           │
-           ▼
-    Repeat
+               │
+               ▼
+        Wait until next hour
+               │
+               ▼
+             Repeat
 ```
 
 **Architecture:**
 
-- ✅ Script runs **once per trigger** (no infinite loop)
-- ✅ GitHub's cron scheduler handles 15-minute intervals
-- ✅ Runner exits after completion (no resource waste)
-- ✅ Timeout set to 30 minutes (safe margin for 50-60 profiles)
+- ✅ Script runs **3 times per hourly trigger**, with 2-minute gaps
+- ✅ GitHub's cron scheduler handles the 1-hour intervals
+- ✅ Runner exits after the 3rd run (no infinite loop)
+- ✅ Timeout set to 30 minutes (safe margin for 3 full passes)
 - ✅ No overlapping runs (GitHub prevents concurrent jobs)
 
 **Benefits:**
 
-- ✅ No more multiple runners stacking up
-- ✅ Clean logs (one run per workflow execution)
+- ✅ Multiple passes each hour to catch changes quickly
+- ✅ Clean logs (3 clearly separated runs per workflow execution)
 - ✅ Efficient resource usage
 - ✅ Predictable behavior
 
