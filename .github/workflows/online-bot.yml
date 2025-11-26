@@ -1,12 +1,8 @@
 name: "DDD Online Bot 📌"
 
-concurrency:
-  group: online-bot
-  cancel-in-progress: false
-
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/20 * * * *'   # // Har 20 minute baad run hoga (simple)
   workflow_dispatch:
     inputs:
       max_profiles:
@@ -21,7 +17,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 60  # // Har run ko apna waqt milay ga. Cancel nahi hoga.
 
     steps:
       - name: Checkout
@@ -68,15 +64,16 @@ jobs:
           DAMADAM_USERNAME_2: ${{ secrets.DAMADAM_USERNAME_2 }}
           DAMADAM_PASSWORD_2: ${{ secrets.DAMADAM_PASSWORD_2 }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-          MAX_PROFILES_PER_RUN: ${{ github.event.inputs.max_profiles }}
-          BATCH_SIZE: ${{ github.event.inputs.batch_size }}
+
+          # // IMPORTANT FIX:
+          # // Agar input empty string ho to yeh defaults safely set ho jayein.
+          MAX_PROFILES_PER_RUN: ${{ github.event.inputs.max_profiles || '0' }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '20' }}
+
           MIN_DELAY: '0.5'
           MAX_DELAY: '0.7'
           PAGE_LOAD_TIMEOUT: '30'
           SHEET_WRITE_DELAY: '1.0'
+
         run: |
           python Scraper.py
-
-
-
-
