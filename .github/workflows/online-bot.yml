@@ -2,7 +2,7 @@ name: "DDD Online Bot 📌"
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # // Har 15 minute baad run hoga (simple)
+    - cron: '*/10 * * * *'   # // Har 10 minute baad run hoga (simple)
   workflow_dispatch:
     inputs:
       max_profiles:
@@ -77,4 +77,5 @@ jobs:
 
         run: |
           python Scraper.py
+
 
