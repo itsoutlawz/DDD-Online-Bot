@@ -617,23 +617,35 @@ class Sheets:
         except Exception as e:
             log_msg(f"Dashboard update failed: {e}")
 
+    def _clean_url(self, url):
+        if not url or not isinstance(url, str):
+            return url
+        # Convert /content/.../g/ to /comments/image/...
+        if '/content/' in url and '/g/' in url:
+            try:
+                # Extract the ID
+                id_part = url.split('/content/')[-1].split('/')[0]
+                return f'https://damadam.pk/comments/image/{id_part}'
+            except (IndexError, AttributeError):
+                return url
+        return url
+
     def _update_links(self, row_idx, data):
         for col in LINK_COLUMNS:
-            val = data.get(col)
-            if not val: continue
-            cidx = COLUMN_TO_INDEX[col]
-            cell = f"{column_letter(cidx)}{row_idx}"
-            if col == "IMAGE":
-                formula = f'=IMAGE("{val}", 4, 50, 50)'
-            elif col == "LAST POST":
-                formula = f'=HYPERLINK("{val}", "Post")'
-            else:
-                formula = f'=HYPERLINK("{val}", "Profile")'
             try:
-                self.ws.update(range_name=cell, values=[[formula]], value_input_option='USER_ENTERED')
+                v = data.get(col)
+                if not v: 
+                    continue
+                # Clean the URL if it's an image URL
+                if col == 'LAST POST' and v and isinstance(v, str) and '/content/' in v and '/g/' in v:
+                    v = self._clean_url(v)
+                c = COLUMN_TO_INDEX[col]
+                cell = f"{column_letter(c)}{row_idx}"
+                # Store raw URL instead of formula
+                self.ws.update(values=[[v]], range_name=cell, value_input_option='USER_ENTERED')
                 time.sleep(SHEET_WRITE_DELAY)
             except Exception as e:
-                log_msg(f"⚠️ Link update skipped (quota): {col}")
+                log_msg(f"Link update skipped (quota): {col}")
                 continue
 
     def _highlight(self, row_idx, indices):
